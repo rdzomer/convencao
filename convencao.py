@@ -3,24 +3,24 @@ import pandas as pd
 import datetime
 import re
 import gspread
-from google.oauth2.service_account import Credentials # Correção: Import correto
-import os # Para verificar existência do arquivo local
+from google.oauth2.service_account import Credentials
+import os
+import json  # para tratar credenciais em JSON
 
 # --- Configuração Inicial ---
 st.set_page_config(page_title="Revisão do Regimento Interno", layout="wide")
 
 # --- Constantes e Configuração do Google Sheets ---
 # Nome EXATO da sua planilha Google
-GOOGLE_SHEET_NAME = "NomeDaSuaPlanilhaDeFeedback" # <<< MUDE AQUI
+GOOGLE_SHEET_NAME = "NomeDaSuaPlanilhaDeFeedback"  # <<< MUDE AQUI
 # Nome EXATO da aba/worksheet dentro da planilha
 WORKSHEET_NAME = "Feedback"
 
 # --- Dados do Regimento Interno (CHAVES MODIFICADAS PARA INCLUIR DICAS) ---
-# (O mesmo dicionário 'regimento_com_hints' da versão anterior)
-# Cole aqui o dicionário 'regimento_com_hints' completo...
+# Cole aqui o dicionário 'regimento_com_hints' completo, conforme sua base.
 regimento_com_hints = {
     # Sumário (Apenas para referência, não revisável diretamente aqui)
-    # "PREÂMBULO": """...""", # Mantido comentado
+    # "PREÂMBULO": """...""",
     "Item 1: Validade e Abrangência": "Este instrumento terá seu âmbito de validade e ação exclusivamente dentro dos domínios do RESIDENCIAL PARAÍSO DAS ÁGUAS, inclusive as áreas de proteção ambiental permanente.",
     "Item 2: Pessoas Sujeitas às Normas": "Estarão sujeitos às normas deste regulamento todas as pessoas, quer sejam proprietários, residentes, trabalhadores, prestadores de serviços, convidados, visitantes, entregadores ou que, por qualquer outra razão, estejam dentro do RESIDENCIAL PARAÍSO DAS ÁGUAS, ou em sua portaria de acesso, assim como seus veículos, meios de locomoção e equipamentos que estiverem portando ou conduzindo.",
 
@@ -109,6 +109,7 @@ regimento_com_hints = {
     "Capítulo V - 5.4.2.14: Reservas das quadras esportivas": "As reservas das quadras esportivas deverão ser encaminhadas a administração com antecedência mínima de 24 horas e máxima de 5 dias, respeitando o horário de funcionamento da mesma.",
     "Capítulo V - 5.4.2.15: Uso preferencial pela administração": "A administração poderá dispor preferencialmente das quadras e demais áreas comuns para uso de atividades de interesse comum.",
     "Capítulo V - 5.4.2.16: Uso das churrasqueiras (Resolução)": "A utilização das churrasqueiras será disciplinadas por Resolução definida pela Diretoria e afixada na portaria.",
+
     "Capítulo V - 5.5: CRIAÇÃO DE ANIMAIS": "Regulamenta a permissão, proibição e condições para a criação e manutenção de animais no Residencial.",
     "Capítulo V - 5.5.1: Animais proibidos (silvestres, comerciais, etc.)": "Não será permitida ou tolerada, em nenhuma hipótese, a criação doméstica dos seguintes animais: animais silvestres (proibidos pelos órgãos de defesa do Meio Ambiente), animais com propósito de sua comercialização; animais ferozes: Animais exóticos e selvagens – ainda que domesticadas (por ex. búfalos, répteis, cobras, etc.); Animais mesmo que domesticados em nenhuma quantidade que coloque em perigo ou risco a comunidade local ou que perturbem o sossego (porcos, eqüinos, bovinos, caprinos). Animais em confinamento ou para engorda. Casos excepcionais (por exemplo: galinheiro) consultar a administração do RESIDENCIAL PARAÍSO DAS ÁGUAS;",
     "Capítulo V - 5.5.2: Raças caninas proibidas": "Fica proibida, ainda, a criação das seguintes raças caninas: Pitbull, Fila Brasileiro, Mastin Napolitano, Rotwailler e Doberman, além de outras que sejam conhecidamente violentas;",
@@ -119,6 +120,7 @@ regimento_com_hints = {
     "Capítulo V - 5.5.7: Passeio com coleira e focinheira": "Todos os animais que estiverem passeando pelo RESIDENCIAL PARAÍSO DAS ÁGUAS devem estar acompanhados do criador e ainda presos a uma coleira, bem comopara as raças médias e grandes, usando focinheira. O trânsito de cães médios e grandes sem focinheira será considerado infração grave;",
     "Capítulo V - 5.5.8: Proibição de criação comercial": "Não será permitida a criação comercial de animais nas unidades autônomas.",
     "Capítulo V - 5.5.9: Responsabilidade por danos causados por animais": "O criador se responsabilizará pelos danos materiais e cíveis ocasionados por seus animais.",
+
     "Capítulo V - 5.6: ÁREA DE PRESERVAÇÃO PERMANENTE (APP)": "Define regras para a Área de Preservação Permanente (APP) que margeia o Lago Corumbá.",
     "Capítulo V - 5.6.1: Regras específicas para a APP": "A faixa legal de preservação que margeia o Lago Corumbá, internamente ao RESIDENCIAL PARAÍSO DAS ÁGUAS, é considerada Área de Preservação Permanente e para aquele local deverão ser observadas as seguintes regras:",
     "Capítulo V - 5.6.1.1: Proibição de fechar acesso à APP": "E terminantemente vedado aos associados vizinhos às vias marginais fecharem ou isolarem as passagens que acessem a APP, tanto para alongamento do seu terreno quanto para uso individual, devendo permanecer completamente desobstruídas as referidas vias:",
@@ -135,6 +137,7 @@ regimento_com_hints = {
     "Capítulo VI - 6.1.6: Proibição de desmembrar terreno": "E proibido ao proprietário desmembrar o terreno adquirido;",
     "Capítulo VI - 6.1.7: Construção de fossa séptica e sumidouro": "O associado deverá construir fossa séptica e sumidouro proporcional ao projeto de edificação, de acordo com a NBR número 7229 da ABNT, ou outra posterior que a substitua:",
     "Capítulo VI - 6.1.8: Submissão de projetos à Comissão": "Todos os projetos deverão ser submetidos a Comissão de Obras e Aprovação de Projetos.",
+
     "Capítulo VI - 6.2: DOS RECUOS": "Define as distâncias mínimas (recuos) que as edificações devem manter das divisas dos lotes.",
     "Capítulo VI - 6.2.1: Recuos obrigatórios (Frontal, Lateral, Fundo)": "A partir da data da aprovação deste regimento, quaisquer edificações deverão estar recuadas da seguinte forma: Frontal — 10 (dez) metros da testada do lote; Lateral: 02 (dois) metros das linhas divisórias. Fundo: 02 (dois) metros respeitando a reserva legal, com exceção dos lotes das quadras 7, 8 e 9 que deverão estar recuadas pelo menos a: Frontal — 6 (seis) metros da testada do lote; Lateral: 2,0 metros das linhas divisórias. Fundo – 2,0 metros respeitando a reserva legal.",
     "Capítulo VI - 6.2.1.1: Casos excepcionais (topografia)": "Casos excepcionais, em função da topografia do lote serão avaliados pela Comissão de Obras e Aprovação de Projetos, sendo vedada a aprovação de recuos frontais inferiores 05 (cinco) metros da testada do lote:",
@@ -153,6 +156,7 @@ regimento_com_hints = {
     "Capítulo VI - 6.2.11: Subsolo (definição e permissão)": "A existência de subsolo (ambientes totalmente sob a linha natural da rua) é permitida, devendo observar as normas municipais do código de edificações e o uso do solo. Quando houver, pelo aproveitamento do caimento do terreno. a existência de um nível inferior a dois pavimentos, não sendo considerado um 3º pavimento;",
     "Capítulo VI - 6.2.12: Vedação dos lotes (materiais e altura)": "A vedação dos lotes poderá ser feita de vidros, cerca viva, cerca colonial, alambrados e alvenarias, sendo que, neste último caso, deverá ser utilizada em conjunto com os demais materiais de forma que a alvenaria limite-se a ao máximo de 0,60m de altura, a partir da qual deverá ser utilizados os materiais anteriormente citados. A altura máxima das vedações é de 2,1m respeitando-se o determinado no item 6.2.2.4.",
     "Capítulo VI - 6.2.13: Cercas vivas (recuo e manutenção)": "As covas de cercas vivas devem ser recuadas de no mínimo 0,5 (meio) metro da linha divisória, ficando a manutenção e poda a cargo do proprietário que a plantou.",
+
     "Capítulo VI - 6.3: NORMAS DE OBRAS": "Estabelece regras específicas para a condução e execução das obras.",
     "Capítulo VI - 6.3.1: Autorização para início da obra": "O início da obra será autorizado pela associação, somente após o recebimento e a aprovação do projeto;",
     "Capítulo VI - 6.3.2: Retirada de cartilha de orientações": "Antes do início da obra, o interessado deverá retirar junto à Comissão de Obras e Aprovação de Projetos, uma cartilha com os dados atualizados de ligações e abastecimentos entre outros, referentes ao caso específico de cada lote e importantes para o início dos trabalhos de construção;",
@@ -167,18 +171,18 @@ regimento_com_hints = {
     "Capítulo VI - 6.3.11: Irregularidades na obra (notificação/prazo)": "Deverão ser obedecidos todos os itens normatizados neste regulamento interno e caso a associação, encontre irregularidades, será estabelecido um prazo para a regularização, correção ou reparo, através de notificação ao proprietário ou seu preposto. Diante do não cumprimento, a associação, aplicará as penalidades previstas e ainda poderá tomar as providências e repassar os custos aos proprietários;",
     "Capítulo VI - 6.3.12: Edificações preexistentes": "As edificações já existentes, antes da aprovação do presente regimento interno, serão consideradas válidas para todos os efeitos, desde que tenham sido respeitadas as normas constantes do contrato de compra e venda realizado com a JMD EmpreendimentoImobiliários e que seguirá em anexo ao presente Regimento para fins de consulta;",
     "Capítulo VI - 6.3.13: Avaliação estética dos projetos": "Os projetos submetidos a Comissão de Obras e Aprovação de Projetos serão avaliados Segundo o tipo de material, forma e aspectos arquitetônicos, visando a manutenção da estética geral do RESIDENCIAL PARAÍSO DAS ÁGUAS.",
+
     "Capítulo VI - 6.4: DAS CALÇADAS": "Define as regras e padrões para a construção e manutenção das calçadas.",
     "Capítulo VI - 6.4.1: Obrigatoriedade das calçadas (após pavimentação)": "A confecção das calçadas não será obrigatória até a pavimentação das vias internas do RESIDENCIAL PARAÍSO DAS ÁGUAS.",
     "Capítulo VI - 6.4.2: Padrão de calçamento (opcional)": "As unidades que optarem por realizá-las terá que seguir um padrão de calçamento observando o limite de até 1,5 (um metro e meio) frente à unidade e respeitando a permeabilização com um limite de até 75cm do uso de pedra pirenópolis com grama ou bloquetes “pavers” com grama e o restante com a grama “esmeralda” na frente, ou somente grama em sua totalidade.",
     "Capítulo VI - 6.4.2: Manutenção das calçadas (proprietário)": "As calçadas devem ser construídas e terem sua manutenção por conta do proprietário da unidade.",
-    "Capítulo VI - 6.4.2: Construção plana da calçada (1,5m)": "A calçada será construída de forma plana medindo 1,5 (um metro e meio) dos limites de demarcação do lote;", # Repetido, ajustando descrição
-    "Capítulo VI - 6.4.2: Não obrigatoriedade (até pavimentação)": "A construção da calçada não é obrigatória até definir a pavimentação da rua;", # Repetido, ajustando descrição
-    "Capítulo VI - 6.4.2: Requisitos ao optar por construir": "Optando por construir a calçada está terá a obrigatoriedade de seguir os seguintes requisitos: medindo dos limites de demarcação frontal da unidade em direção a rua 75 cm em pedra pirenópolis com grama ou bloquetes/pavers com grama, ou somente grama. Os últimos 75cm serão complementados com grama “esmeralda”;", # Repetido, ajustando descrição
-    "Capítulo VI - 6.4.2: Recuperação após patrolamento": "Os proprietários se comprometem a recuperar os respectivos passeios/calçadas caso ocorra algum tipo de ajuste no patrolamento das ruas;", # Repetido, ajustando descrição
-    "Capítulo VI - 6.4.2: Manutenção da grama (notificação/taxa)": "No caso de utilização de grama se a unidade não providenciar a manutenção a Associação fará um notificação/comunicado para o responsável fazê-lo, não ocorrendo à devida manutenção após a notificação/ comunicado será documentado (fotos) e associação providenciará a limpeza cobrando uma taxa ordinária de contribuição mensal.", # Repetido, ajustando descrição
+    "Capítulo VI - 6.4.2: Construção plana da calçada (1,5m)": "A calçada será construída de forma plana medindo 1,5 (um metro e meio) dos limites de demarcação do lote;",
+    "Capítulo VI - 6.4.2: Não obrigatoriedade (até pavimentação)": "A construção da calçada não é obrigatória até definir a pavimentação da rua;",
+    "Capítulo VI - 6.4.2: Requisitos ao optar por construir": "Optando por construir a calçada está terá a obrigatoriedade de seguir os seguintes requisitos: medindo dos limites de demarcação frontal da unidade em direção a rua 75 cm em pedra pirenópolis com grama ou bloquetes/pavers com grama, ou somente grama. Os últimos 75cm serão complementados com grama “esmeralda”;",
+    "Capítulo VI - 6.4.2: Recuperação após patrolamento": "Os proprietários se comprometem a recuperar os respectivos passeios/calçadas caso ocorra algum tipo de ajuste no patrolamento das ruas;",
+    "Capítulo VI - 6.4.2: Manutenção da grama (notificação/taxa)": "No caso de utilização de grama se a unidade não providenciar a manutenção a Associação fará um notificação/comunicado para o responsável fazê-lo, não ocorrendo à devida manutenção após a notificação/ comunicado será documentado (fotos) e associação providenciará a limpeza cobrando uma taxa ordinária de contribuição mensal.",
 
-    # ... (Cole o resto do dicionário regimento_com_hints aqui) ...
-     "ANEXO IV: COMISSÃO DE FESTAS E EVENTOS": "Define a criação, composição e atribuições da Comissão de Festas e Eventos.",
+    "ANEXO IV: COMISSÃO DE FESTAS E EVENTOS": "Define a criação, composição e atribuições da Comissão de Festas e Eventos.",
 }
 
 # --- Funções Auxiliares ---
@@ -196,34 +200,65 @@ def convert_df_to_csv(df):
 
 # --- Conexão com Google Sheets (Cacheada) ---
 
-# Define os escopos necessários para a API
+# Escopos necessários para a API
 SCOPES = [
-    'https://www.googleapis.com/auth/spreadsheets',
-    'https://www.googleapis.com/auth/drive.file'
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive.file",
 ]
 
-@st.cache_resource # Cacheia o recurso de conexão
+@st.cache_resource
 def init_connection():
-    """Inicializa a conexão com a Google Sheets API."""
-    # Tenta carregar credenciais do Secrets do Streamlit (para deploy)
-    creds_json = st.secrets.get("GOOGLE_CREDENTIALS_JSON")
-    if creds_json:
-        creds = Credentials.from_service_account_info(creds_json, scopes=SCOPES)
-        st.toast("Usando credenciais do Streamlit Secrets.", icon="☁️") # Feedback visual
-    # Senão, tenta carregar de um arquivo local (para desenvolvimento)
-    elif os.path.exists("google_credentials.json"):
-        creds = Credentials.from_service_account_file("google_credentials.json", scopes=SCOPES)
-        st.toast("Usando credenciais do arquivo local 'google_credentials.json'.", icon="💻") # Feedback visual
-    else:
-        st.error("Credenciais da Conta de Serviço do Google não encontradas! Verifique os Secrets do Streamlit ou o arquivo 'google_credentials.json'.")
-        return None # Retorna None se não conseguir credenciais
+    """
+    Inicializa a conexão com a Google Sheets API, aceitando:
+    1) [gcp_service_account] em secrets TOML,
+    2) GOOGLE_CREDENTIALS_JSON (string JSON ou dict) em secrets,
+    3) arquivo local google_credentials.json (para dev).
+    """
+    sa_info = None
+    source = None
 
     try:
+        # 1) Tabela TOML: [gcp_service_account]
+        if "gcp_service_account" in st.secrets:
+            sa_info = dict(st.secrets["gcp_service_account"])
+            source = "secrets: gcp_service_account"
+
+        # 2) JSON em string/dict: GOOGLE_CREDENTIALS_JSON
+        elif "GOOGLE_CREDENTIALS_JSON" in st.secrets:
+            raw = st.secrets["GOOGLE_CREDENTIALS_JSON"]
+            if isinstance(raw, str):
+                sa_info = json.loads(raw)
+            elif isinstance(raw, dict):
+                sa_info = dict(raw)
+            else:
+                st.error("GOOGLE_CREDENTIALS_JSON encontrado, mas em formato não suportado.")
+                return None
+            source = "secrets: GOOGLE_CREDENTIALS_JSON"
+
+        # 3) Arquivo local para desenvolvimento
+        elif os.path.exists("google_credentials.json"):
+            with open("google_credentials.json", "r", encoding="utf-8") as f:
+                sa_info = json.load(f)
+            source = "arquivo local google_credentials.json"
+        else:
+            st.error("Credenciais não encontradas. Configure secrets ou inclua google_credentials.json.")
+            return None
+
+        # Normaliza quebras de linha da private_key
+        if "private_key" in sa_info and isinstance(sa_info["private_key"], str):
+            sa_info["private_key"] = sa_info["private_key"].replace("\\n", "\n")
+
+        creds = Credentials.from_service_account_info(sa_info, scopes=SCOPES)
         client = gspread.authorize(creds)
+        st.toast(f"Conectado com credenciais ({source}).", icon="🔐")
         return client
+
+    except json.JSONDecodeError as e:
+        st.error(f"Credenciais JSON inválidas: {e}")
     except Exception as e:
         st.error(f"Falha ao autorizar conexão com Google Sheets: {e}")
-        return None
+
+    return None
 
 def get_worksheet(client):
     """Obtém a worksheet específica."""
@@ -254,7 +289,6 @@ def write_feedback_to_sheet(worksheet, feedback_data):
         st.error("Não foi possível escrever na planilha (conexão não estabelecida).")
         return False
     try:
-        # Garante a ordem correta das colunas conforme definido na planilha
         row_to_insert = [
             feedback_data.get("Item Revisado (com Descrição)", ""),
             feedback_data.get("Remetente", ""),
@@ -262,35 +296,30 @@ def write_feedback_to_sheet(worksheet, feedback_data):
             feedback_data.get("Sugestão de Alteração", ""),
             feedback_data.get("Data/Hora", "")
         ]
-        worksheet.append_row(row_to_insert, value_input_option='USER_ENTERED')
+        worksheet.append_row(row_to_insert, value_input_option="USER_ENTERED")
         return True
     except Exception as e:
         st.error(f"Erro ao escrever na planilha: {e}")
-        # Poderia adicionar um log mais detalhado aqui se necessário
         return False
 
-@st.cache_data(ttl=600) # Cacheia os dados lidos por 10 minutos
-def read_feedback_from_sheet(_worksheet): # Adiciona _ para indicar que worksheet vem de fora
+@st.cache_data(ttl=600)
+def read_feedback_from_sheet(_worksheet):
     """Lê todos os dados de feedback da planilha."""
     if _worksheet is None:
         st.error("Não foi possível ler da planilha (conexão não estabelecida).")
-        return pd.DataFrame() # Retorna DataFrame vazio em caso de erro
+        return pd.DataFrame()
     try:
-        # get_all_records() é conveniente pois retorna lista de dicionários
         data = _worksheet.get_all_records()
         df = pd.DataFrame(data)
-        # Garante que as colunas essenciais existam, mesmo que a planilha esteja vazia inicialmente
         expected_cols = ["Item Revisado (com Descrição)", "Remetente", "Crítica/Comentário", "Sugestão de Alteração", "Data/Hora"]
         for col in expected_cols:
             if col not in df.columns:
-                df[col] = None # Adiciona coluna vazia se não existir
-        # Reordena para consistência, caso a leitura inicial não respeite a ordem
+                df[col] = None
         df = df[expected_cols]
         return df
     except Exception as e:
         st.error(f"Erro ao ler dados da planilha: {e}")
-        return pd.DataFrame() # Retorna DataFrame vazio em caso de erro
-
+        return pd.DataFrame()
 
 # --- Interface do Streamlit ---
 
@@ -327,7 +356,7 @@ if item_selecionado_com_hint:
     st.text_area(
         "Texto Completo / Descrição Detalhada:",
         value=texto_item,
-        height=250, # Ajustei a altura
+        height=250,
         disabled=True,
         key=texto_key
     )
@@ -335,18 +364,17 @@ if item_selecionado_com_hint:
     st.markdown("---")
     st.subheader("📩 Seu Feedback sobre este Item:")
 
-    # Obtém a worksheet aqui para usar no formulário
     worksheet = get_worksheet(gspread_client)
 
     with st.form(key=form_key):
         critica = st.text_area(
             "Críticas / Comentários / Justificativas:",
-            height=100, # Ajustei a altura
+            height=100,
             placeholder="Descreva aqui os pontos que você acha que precisam de mudança, ou os problemas com a redação atual."
         )
         sugestao = st.text_area(
             "Sugestão de Nova Redação / Alteração:",
-            height=100, # Ajustei a altura
+            height=100,
             placeholder="Se tiver uma sugestão de como o texto deveria ficar, escreva aqui."
         )
         remetente = st.text_input(
@@ -359,7 +387,7 @@ if item_selecionado_com_hint:
 
         if submitted:
             if not worksheet:
-                 st.error("Falha na conexão com a Planilha. Feedback não pode ser enviado.")
+                st.error("Falha na conexão com a Planilha. Feedback não pode ser enviado.")
             elif not critica and not sugestao:
                 st.warning("Por favor, escreva ao menos uma crítica ou sugestão antes de enviar.")
             else:
@@ -371,13 +399,9 @@ if item_selecionado_com_hint:
                     "Sugestão de Alteração": sugestao,
                     "Data/Hora": timestamp
                 }
-
-                # Tenta escrever na planilha
                 success = write_feedback_to_sheet(worksheet, feedback_data)
-
                 if success:
                     st.success(f"✅ Feedback para '{item_selecionado_com_hint}' enviado com sucesso para a Planilha Google! Obrigado.")
-                    # Não precisamos mais mostrar o feedback aqui, pois ele está persistido
                 else:
                     st.error("❌ Houve um erro ao tentar salvar seu feedback na Planilha. Tente novamente mais tarde.")
 
@@ -385,41 +409,34 @@ if item_selecionado_com_hint:
 st.markdown("---")
 st.header("🔒 Área Administrativa - Feedback Consolidado")
 
-# Obtém a senha correta dos secrets
-correct_password = st.secrets.get("ADMIN_PASSWORD", "senha_padrao_local") # Use uma senha padrão se não estiver em secrets
+correct_password = st.secrets.get("ADMIN_PASSWORD", "senha_padrao_local")
 
-# Campo para digitar a senha
 password_attempt = st.text_input("Digite a senha de administrador para ver o feedback:", type="password", key="admin_password_input")
 
-if password_attempt: # Só prossiga se algo foi digitado
+if password_attempt:
     if password_attempt == correct_password:
         st.success("Senha correta! Acessando dados...")
-
-        # Obtém a worksheet novamente (pode ter sido None antes)
         worksheet_admin = get_worksheet(gspread_client)
 
         if worksheet_admin:
             st.subheader("📊 Resumo do Feedback Recebido (da Planilha)")
-            # Lê os dados da planilha
             df_feedback = read_feedback_from_sheet(worksheet_admin)
 
             if not df_feedback.empty:
                 st.dataframe(df_feedback, use_container_width=True)
 
-                # Opção para download como CSV
                 csv_data = convert_df_to_csv(df_feedback)
                 st.download_button(
                     label="📥 Baixar Feedback Completo (CSV)",
                     data=csv_data,
                     file_name=f"feedback_regimento_interno_{datetime.date.today()}.csv",
                     mime="text/csv",
-                    key="download_csv_button" # Adiciona uma chave explícita
+                    key="download_csv_button"
                 )
             else:
                 st.info("Ainda não há feedback registrado na planilha ou houve erro na leitura.")
         else:
             st.error("Não foi possível conectar à planilha para buscar o feedback.")
-
     else:
         st.error("Senha incorreta.")
 
